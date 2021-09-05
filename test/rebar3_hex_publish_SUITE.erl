@@ -19,6 +19,10 @@ format_error_test(_Config) ->
             {invalid_semver, {myapp, "-1.2.3"}},
             <<"myapp.app.src : non-semantic version number \"-1.2.3\" found">>
         },
+        { 
+         {invalid_semver_arg, <<"1.0">>},
+          <<"The version argument provided \"1.0\" is not a valid semantic version.">>
+        },
         {{no_description, myapp}, <<"myapp.app.src : missing or empty description property">>},
         {{no_license, myapp}, <<"myapp.app.src : missing or empty licenses property">>},
         {{has_maintainers, myapp}, <<"myapp.app.src : deprecated field maintainers found">>},
@@ -36,6 +40,18 @@ format_error_test(_Config) ->
         {
             {publish, {error, #{<<"message">> => "non sequitur"}}},
             <<"Failed to publish package: non sequitur">>
+        },
+        {
+            {publish_package, app_switch_required},
+            <<"--app required when publishing with the package argument in a umbrella">>
+        },
+        {
+            {publish_docs, app_switch_required},
+            <<"--app required when publishing with the docs argument in a umbrella">>
+        },
+        {
+            {revert, app_switch_required},
+            <<"--app required when reverting in a umbrella with multiple apps">>
         },
         {
             {non_hex_deps, ["dep1", "dep2", "dep3"]},
@@ -98,7 +114,7 @@ format_error_test(_Config) ->
     ),
 
     Msg = "--app required when publishing with the package argument in a umbrella",
-    ?assertEqual(Msg, rebar3_hex_publish:format_error({app_switch_required, Msg})),
+    ?assertEqual(Msg, rebar3_hex_publish:format_error({publish_package, app_switch_required})),
 
     Msg1 = io_lib:format(
         "Can not publish package because the following deps are not available in hex: ~s", ["eh"]

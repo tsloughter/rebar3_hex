@@ -1,6 +1,7 @@
 -module(rebar3_hex_client).
 
 -export([ is_success/1
+        , delete_release/3
         , key_add/3
         , key_get/2
         , key_delete/2
@@ -55,6 +56,10 @@ test_key(HexConfig, Perms) ->
 
 publish(HexConfig, Tarball, Opts) ->
     Res = hex_api_release:publish(HexConfig, Tarball, Opts),
+    response(Res).
+
+delete_release(HexConfig, Name, Version) -> 
+    Res = hex_api_release:delete(HexConfig, Name, Version),
     response(Res).
 
 publish_docs(Repo, Name, Version, Tarball) ->
