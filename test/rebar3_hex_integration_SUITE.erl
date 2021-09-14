@@ -12,18 +12,8 @@ all() ->
     [ sanity_check
     , decrypt_write_key_test
     , bad_command_test
-    , docs_test
-    , docs_auth_error_test
-    , docs_dir_error_test
-    , docs_dir_without_file_test
-    , docs_dry_run_test
-    , docs_invalid_repo_test
-    , docs_no_write_key_test
-    , docs_revert_test
-    , docs_revert_auth_error_test
     , reset_password_test
     , reset_password_error_test
-    , reset_password_unhandled_test
     , reset_password_api_error_test
     , register_user_test
     , register_empty_password_test
@@ -40,19 +30,38 @@ all() ->
     , whoami_not_authed_test
     , whoami_error_test
     , whoami_unknown_test
-    , whoami_unhandled_test
     , deauth_test
     , publish_test
+    , publish_no_prompt_test
+    , publish_package_with_pointless_app_arg_test
+    , publish_with_checkouts_warnings_test
+    , publish_abort_test
+    , publish_in_umbrella_test
+    , publish_package_test
     , publish_multi_errors_test
+    , publish_in_umbrella_when_app_does_not_exist
+    , publish_package_in_umbrella_with_app_opt_test
+    , publish_docs_in_umbrella_with_app_opt_test
+    , publish_package_in_umbrella_without_app_opt_test
+    , publish_docs_in_umbrella_without_app_opt_test
+    , publish_package_in_umbrella_when_does_not_exist_test
+    , publish_docs_in_umbrella_when_does_not_exist_test
     , publish_replace_test
     , publish_revert_test
+    , publish_revert_in_umbrella_test
+    , publish_revert_in_umbrella_without_app_arg_test
+    , publish_revert_in_umbrella_app_not_found_test
+    , publish_revert_package_test
+    , publish_revert_invalid_version_test
+    , publish_revert_docs_test
     , publish_org_test
+    , publish_org_non_hexpm_test
     , publish_org_error_test
     , publish_org_requires_repo_arg_test
     , publish_error_test
     , publish_unauthorized_test
-    , publish_without_docs_test
-    , publish_only_docs_test
+    , publish_docs_test
+    , publish_docs_dry_run_test
     , retire_test
     , key_list_test
     , key_get_test
@@ -62,8 +71,7 @@ all() ->
     , owner_add_test
     , owner_transfer_test
     , owner_list_test
-    , owner_remove_test
-    , revert_invalid_ver_test].
+    , owner_remove_test].
 
 init_per_suite(Config) ->
     meck:new([hex_api_user, rebar3_hex_config, rebar3_hex_io], [passthrough, no_link, unstick]),
@@ -107,8 +115,9 @@ data_dir(Config) -> ?config(data_dir, Config).
 -define(default_repo, <<"hexpm">>).
 
 -define(default_repo_config, #{repo => ?default_repo,
-                                    name => ?default_repo,
-                                    username => ?default_username
+                                name => ?default_repo,
+                                username => ?default_username,
+                                doc => #{provider => edoc}
                               }).
 
 sanity_check(_Config) ->
@@ -121,113 +130,6 @@ sanity_check(_Config) ->
         ?assertEqual(Email, maps:get(<<"email">>, Res)),
         ?assert(maps:is_key(<<"inserted_at">>, Res)),
         ?assert(maps:is_key(<<"updated_at">>, Res)).
-
-docs_test(Config) ->
-    P = #{app => "valid", mocks => [docs]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    Command = ["docs"],
-    RepoConfig =  [{repos,[Repo]}],
-    {ok, DocState} = test_utils:mock_command(rebar3_hex_docs, Command, RepoConfig, State),
-    {ok, NewState} = rebar_prv_edoc:do(DocState),
-    ?assertMatch({ok, NewState}, rebar3_hex_docs:do(NewState)).
-
-docs_dir_error_test(Config) ->
-    P = #{app => "valid", mocks => [docs]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    Command = ["docs"],
-    RepoConfig = [{repos,[Repo]}],
-    {ok, NewState} = test_utils:mock_command(rebar3_hex_docs, Command, RepoConfig, State),
-    ?assertThrow(rebar_abort, rebar3_hex_docs:do(NewState)).
-
-docs_dir_without_file_test(Config) ->
-    P = #{app => "valid", mocks => [docs]},
-    {ok, #{app_state := App, rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    Command = ["docs"],
-    RepoConfig = [{repos,[Repo]}],
-    {ok, DocState} = test_utils:mock_command(rebar3_hex_docs, Command, RepoConfig, State),
-    ok = rebar_file_utils:rm_rf(filename:join(rebar_app_info:dir(App), "doc/index.html")),
-    ?assertThrow(rebar_abort, rebar3_hex_docs:do(DocState)).
-
-docs_dry_run_test(Config) ->
-    P = #{app => "valid", mocks => [docs]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    Command = ["--dry-run"],
-    RepoConfig =  [{repos,[Repo]}],
-    {ok, DocState} = test_utils:mock_command(rebar3_hex_docs, Command, RepoConfig, State),
-    {ok, NewState} = rebar_prv_edoc:do(DocState),
-    ?assertMatch({ok, NewState}, rebar3_hex_docs:do(NewState)).
-
-docs_revert_test(Config) ->
-    P = #{app => "valid", mocks => [docs]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    Command = ["revert", "0.1.1"],
-    RepoConfig =  [{repos,[Repo]}],
-    {ok, DocState} = test_utils:mock_command(rebar3_hex_docs, Command, RepoConfig, State),
-    {ok, NewState} = rebar_prv_edoc:do(DocState),
-    ?assertMatch({ok, NewState}, rebar3_hex_docs:do(NewState)).
-
-docs_revert_auth_error_test(Config) ->
-    P = #{app => "valid",
-          mocks => [docs],
-          repo_config => #{username => <<"eh">>},
-          username => <<"eh">>,
-          password => <<"eh">>,
-          key_phrase => <<"eh">>
-         },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    Command = ["revert", "0.1.1"],
-    RepoConfig = [{repos,[Repo]}],
-    {ok, DocState} = test_utils:mock_command(rebar3_hex_docs, Command, RepoConfig, State),
-    %ExpError = {error,{rebar3_hex_docs,{revert,{unauthorized,#{}}}}},
-    ExpError = {error,{rebar3_hex_docs,{publish,{error,#{}}}}},
-    {ok, NewState} = rebar_prv_edoc:do(DocState),
-    ?assertMatch(ExpError, rebar3_hex_docs:do(NewState)).
-
-docs_auth_error_test(Config) ->
-    P = #{app => "valid",
-          mocks => [docs],
-          repo_config => #{username => <<"eh">>},
-          username => <<"eh">>,
-          password => <<"eh">>,
-          key_phrase => <<"eh">>
-         },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    Command = [],
-    RepoConfig =  [{repos,[Repo]}],
-    {ok, DocState} = test_utils:mock_command(rebar3_hex_docs, Command, RepoConfig, State),
-    {ok, NewState} = rebar_prv_edoc:do(DocState),
-    ExpError = {error,{rebar3_hex_docs,{publish,{error,#{}}}}},
-    ?assertMatch(ExpError , rebar3_hex_docs:do(NewState)).
-
-docs_invalid_repo_test(Config) ->
-    P = #{app => "valid",
-          mocks => [docs],
-          repo_config => #{repo => <<"hexpm:eh">>,
-                           name => <<"hexpm:eh">>,
-                           username => <<"eh">>
-                          }
-
-         },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig =  [{repos,[Repo]}],
-    {ok, DocState} = test_utils:mock_command(rebar3_hex_docs, ["-r", "hexpm:valid"], RepoConfig, State),
-    {ok, NewState} = rebar_prv_edoc:do(DocState),
-
-    ExpError = {error,{rebar3_hex_docs,{not_valid_repo,"hexpm:valid"}}},
-    ?assertMatch(ExpError , rebar3_hex_docs:do(NewState)).
-
-docs_no_write_key_test(Config) ->
-    P = #{app => "valid",
-          mocks => [docs],
-          repo_config => #{write_key => undefined}
-         },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig =  [{repos,[Repo]}],
-    {ok, DocState} = test_utils:mock_command(rebar3_hex_docs, [], RepoConfig, State),
-    {ok, NewState} = rebar_prv_edoc:do(DocState),
-
-    ExpError = {error,{rebar3_hex_docs,no_write_key}},
-    ?assertMatch(ExpError , rebar3_hex_docs:do(NewState)).
 
 %% We test this specific function here as it requires a mock.
 decrypt_write_key_test(_Config) ->
@@ -249,107 +151,106 @@ decrypt_write_key_test(_Config) ->
     ?assertEqual(WriteKey, rebar3_hex_user:decrypt_write_key(Username, WriteKeyEncrypted)).
 
 register_user_test(Config) ->
-    P = #{app => "valid",
+    P = #{command => #{provider => rebar3_hex_user, args => ["register"]}, 
+          project => "valid",
           mocks => [register],
           username => <<"jlundegaard">>,
           email => <<"jlundegaard@gustafson-mortors.com">>
          },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig =  [{repos,[Repo]}],
-    {ok, RegState} = test_utils:mock_command(rebar3_hex_user, ["register"], RepoConfig, State),
-    ?assertMatch({ok, RegState}, rebar3_hex_user:do(RegState)).
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_user:do(State)).
 
 register_existing_user_test(Config) ->
-    P = #{app => "valid",
+    P = #{command => #{provider => rebar3_hex_user, args => ["register"]},
+          project => "valid",
           mocks => [register],
           username => <<"not_taken">>,
           email => ?default_email
          },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
     ExpErr1 = {error, {rebar3_hex_user, {registration_failure, <<"email already in use">>}}},
-    RepoConfig = [{repos,[Repo]}],
-    {ok, RegState} = test_utils:mock_command(rebar3_hex_user, ["register"], RepoConfig, State),
-    ?assertMatch(ExpErr1, rebar3_hex_user:do(RegState)).
+    ?assertMatch(ExpErr1, rebar3_hex_user:do(State)).
 
 register_empty_password_test(Config) ->
-    P = #{app => "valid",
+    P = #{command => #{provider => rebar3_hex_user, args => ["register"]},
+          project => "valid",
           mocks => [register],
           password => <<>>
          },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig =  [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["register"], RepoConfig, State),
-
-    ?assertMatch(error, rebar3_hex_user:do(AuthState)).
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch(error, rebar3_hex_user:do(State)).
 
 register_error_test(Config) ->
     meck:expect(hex_api_user, create, fun(_,_,_,_) -> {error, meh} end),
-    P = #{app => "valid", mocks => [register]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["register"], RepoConfig, State),
-
+    P = #{command => #{provider => rebar3_hex_user, args => ["register"]}, project => "valid", mocks => [register]},
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,{rebar3_hex_user,{registration_failure,["meh"]}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(AuthState)).
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)).
 
 register_password_mismatch_test(Config) ->
-    P = #{app => "valid", mocks => [register], password_confirmation => <<"special_shoes0">>},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["register"]}, 
+          project => "valid", 
+          mocks => [register], 
+          password_confirmation => <<"special_shoes0">>
+         },
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["register"], RepoConfig, State),
-
     ExpErr = {error,{rebar3_hex_user,{error,"passwords do not match"}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(AuthState)).
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)).
 
 auth_test(Config) ->
-    P = #{app => "valid", mocks => [first_auth]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{command => #{provider => rebar3_hex_user, args => ["auth"]}, project => "valid", mocks => [first_auth]},
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["auth"], RepoConfig, State),
-    ?assertMatch({ok, AuthState}, rebar3_hex_user:do(AuthState)).
+    ?assertMatch({ok, State}, rebar3_hex_user:do(State)).
 
 auth_bad_local_password_test(Config) ->
-    P = #{app => "valid", mocks => [first_auth], password_confirmation => <<"oops">>},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["auth"]}, 
+          project => "valid", 
+          mocks => [first_auth], 
+          password_confirmation => <<"oops">>
+         },
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["auth"], RepoConfig, State),
-    ?assertThrow({error,{rebar3_hex_user,no_match_local_password}}, rebar3_hex_user:do(AuthState)).
+    ?assertThrow({error,{rebar3_hex_user,no_match_local_password}}, rebar3_hex_user:do(State)).
 
 auth_password_24_char_test(Config) ->
     Pass = <<"special_shoes_shoes">>,
-    P = #{app => "valid", mocks => [first_auth], password => Pass, password_confirmation => Pass},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["auth"]}, 
+          project => "valid", 
+          mocks => [first_auth], 
+          password => Pass, 
+          password_confirmation => Pass
+         },
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["auth"], RepoConfig, State),
-    ?assertMatch({ok, AuthState}, rebar3_hex_user:do(AuthState)).
+    ?assertMatch({ok, State}, rebar3_hex_user:do(State)).
 
 auth_password_32_char_test(Config) ->
     Pass = <<"special_shoes_shoes_shoes">>,
-    P = #{app => "valid", mocks => [first_auth], password => Pass, password_confirmation => Pass},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["auth"]}, 
+          project => "valid", 
+          mocks => [first_auth], 
+          password => Pass, 
+          password_confirmation => Pass
+         },
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["auth"], RepoConfig, State),
-    ?assertMatch({ok, AuthState}, rebar3_hex_user:do(AuthState)).
+    ?assertMatch({ok, State}, rebar3_hex_user:do(State)).
 
 auth_unhandled_test(Config) ->
-    %% TODO: Revise hex_api_model and hex_db so that we don't need to meck this
     meck:new([hex_api_key]),
     MeckReturn = {ok, {500, #{}, #{<<"message">> => <<"eh?">>}}},
     meck:expect(hex_api_key, add, fun(_,_,_) -> MeckReturn end),
-
-    P = #{app => "valid", mocks => [first_auth]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["auth"], RepoConfig, State),
-
+    P = #{command => #{provider => rebar3_hex_user, args => ["auth"]}, project => "valid", mocks => [first_auth]},
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,{rebar3_hex_user,{generate_key,<<"eh?">>}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(AuthState)),
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)),
     meck:unload([hex_api_key]).
 
 auth_error_test(Config) ->
@@ -357,142 +258,249 @@ auth_error_test(Config) ->
     meck:new([hex_api_key]),
     meck:expect(hex_api_key, add, fun(_,_,_) -> {error, meh} end),
 
-    P = #{app => "valid", mocks => [first_auth]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AuthState} = test_utils:mock_command(rebar3_hex_user, ["auth"], RepoConfig, State),
-
+    P = #{command => #{provider => rebar3_hex_user, args => ["auth"]}, project => "valid", mocks => [first_auth]},
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,{rebar3_hex_user,{generate_key,["meh"]}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(AuthState)),
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)),
     meck:unload([hex_api_key]).
 
 whoami_test(Config) ->
-    P = #{app => "valid", mocks => [whoami]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, WhoamiState} = test_utils:mock_command(rebar3_hex_user, ["whoami"], RepoConfig, State),
-
-    ?assertMatch({ok, WhoamiState}, rebar3_hex_user:do(WhoamiState)).
+    P = #{command => #{provider => rebar3_hex_user, args => ["whoami"]}, project => "valid", mocks => [whoami]},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_user:do(State)).
 
 whoami_unknown_test(Config) ->
-    P = #{app => "valid", mocks => [whoami], repo_config => #{read_key => <<"eh?">>}},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, WhoamiState} = test_utils:mock_command(rebar3_hex_user, ["whoami"], RepoConfig, State),
-
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["whoami"]}, 
+          project => "valid", 
+          mocks => [whoami], 
+          repo_config => #{read_key => <<"eh?">>}
+         },
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,{rebar3_hex_user,{whoami_failure,<<"huh?">>}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(WhoamiState)).
-
-% TODO: We should definitely handle this case in the code at this point.
-whoami_unhandled_test(_Config) ->
-    %% Double check this is still relevent
-    ok.
-% Repo = test_utils:repo_config(),
-% setup_mocks_for(whoami, {<<"mr_pockets">>, <<"foo@bar.baz">>, <<"special_shoes">>, Repo}),
-% Repo1 = test_utils:repo_config(#{read_key => <<"eh?">>}),
-% {ok, _App, State} = test_utils:mock_app("valid", ?config(data_dir, Config), Repo1),
-% {ok, WhoamiState } = test_utils:mock_command(rebar3_hex_user, ["whoami"], Repo1, State),
-% % TODO: We should handle this case gracefully, whoami/2
-% ?assertError({case_clause, {ok, {500, _, #{<<"whoa">> := <<"mr.">>}}}}, rebar3_hex_user:do(WhoamiState))
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)).
 
 whoami_api_error_test(Config) ->
     meck:expect(hex_api_user, me, fun(_) -> {error, meh} end),
-    P = #{app => "valid", mocks => [whoami], repo_config => #{read_key => <<"!">>}},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, WhoamiState} = test_utils:mock_command(rebar3_hex_user, ["whoami"], RepoConfig, State),
-
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["whoami"]}, 
+          project => "valid", 
+          mocks => [whoami], 
+          repo_config => 
+          #{read_key => <<"!">>}
+         },
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,{rebar3_hex_user,{whoami_failure,["meh"]}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(WhoamiState)).
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)).
 
 whoami_error_test(Config) ->
     meck:expect(hex_api_user, me, fun(_) -> {error, meh} end),
-    P = #{app => "valid", mocks => [whoami]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, WhoamiState} = test_utils:mock_command(rebar3_hex_user, ["whoami"], RepoConfig, State),
-
+    P = #{command => #{provider => rebar3_hex_user, args => ["whoami"]}, project => "valid", mocks => [whoami]},
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,{rebar3_hex_user,{whoami_failure,["meh"]}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(WhoamiState)).
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)).
 
 whoami_not_authed_test(Config) ->
     Str = "Not authenticated as any user currently for this repository",
     expects_output([Str]),
-    P = #{app => "valid", mocks => [whoami], repo_config => #{read_key => undefined}},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, WhoamiState } = test_utils:mock_command(rebar3_hex_user, ["whoami"], RepoConfig, State),
-
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["whoami"]}, 
+          project => "valid", 
+          mocks => [whoami], 
+          repo_config => #{read_key => undefined}
+         },
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,"Not authenticated as any user currently for this repository"},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(WhoamiState)),
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)),
     ?assert(meck:validate(rebar3_hex_io)).
 
 reset_password_test(Config) ->
-    P = #{app => "valid", mocks => [reset_password], username => "mr_pockets"},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, ResetState} = test_utils:mock_command(rebar3_hex_user, ["reset_password"], RepoConfig, State),
-
-    ?assertMatch({ok, ResetState}, rebar3_hex_user:do(ResetState)).
-
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["reset_password"]}, 
+          project => "valid", 
+          mocks => [reset_password], 
+          username => "mr_pockets"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_user:do(State)).
 
 reset_password_api_error_test(Config) ->
-    P = #{app => "valid", mocks => [reset_password], username => "eh?", repo_config => #{username => "eh?"}},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, ResetState} = test_utils:mock_command(rebar3_hex_user, ["reset_password"], RepoConfig, State),
-
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["reset_password"]}, 
+          project => "valid", 
+          mocks => [reset_password], 
+          username => "eh?", 
+          repo_config => #{username => "eh?"}
+         },
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,{rebar3_hex_user,{reset_failure,<<"huh?">>}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(ResetState)).
-
-reset_password_unhandled_test(_Config) ->
-    %% Make sure this is still relevant
-    %%
-    ok.
-% Repo = test_utils:repo_config(#{username => <<"bad">>}),
-% setup_mocks_for(reset_password, {"bad", <<"foo@bar.baz">>, <<"special_shoes">>, Repo}),
-% {ok, _App, State} = test_utils:mock_app("valid", ?config(data_dir, Config), Repo),
-% {ok, ResetState} = test_utils:mock_command(rebar3_hex_user, ["reset_password"], Repo, State),
-% % TODO: We should handle this case gracefully
-% ?assertError({case_clause, {ok, {500, _, #{<<"whoa">> := <<"mr.">>}}}}, rebar3_hex_user:do(ResetState))
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)).
 
 reset_password_error_test(Config) ->
     meck:expect(hex_api_user, reset_password, fun(_,_) -> {error, meh} end),
-    P = #{app => "valid", mocks => [reset_password], username => "mr_pockets"},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, ResetState} = test_utils:mock_command(rebar3_hex_user, ["reset_password"], RepoConfig, State),
-
+    P = #{
+          command => #{provider => rebar3_hex_user, args => ["reset_password"]}, 
+          project => "valid", 
+          mocks => [reset_password], 
+          username => "mr_pockets"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
     ExpErr = {error,{rebar3_hex_user,{reset_failure,["meh"]}}},
-    ?assertMatch(ExpErr, rebar3_hex_user:do(ResetState)).
+    ?assertMatch(ExpErr, rebar3_hex_user:do(State)).
 
 deauth_test(Config) ->
-    P = #{app => "valid", mocks => [deauth]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, DeauthState} = test_utils:mock_command(rebar3_hex_user, ["deauth"], RepoConfig, State),
-
-    ?assertMatch({ok, DeauthState}, rebar3_hex_user:do(DeauthState)).
+    P = #{command => #{provider => rebar3_hex_user, args => ["deauth"]}, project => "valid", mocks => [deauth]},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_user:do(State)).
 
 publish_test(Config) ->
-    P = #{app => "valid", mocks => [publish]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, [], RepoConfig, State),
-    {ok, _} = rebar_prv_edoc:do(PubState),
+    P = #{command => #{provider => rebar3_hex_publish, args => []}, project => "valid", mocks => [publish]},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
 
-    ?assertMatch({ok, PubState}, rebar3_hex_publish:do(PubState)).
+publish_no_prompt_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--yes"]}, 
+          project => "valid", 
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_package_with_pointless_app_arg_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["package", "--app", "valid"]}, 
+          project => "valid", 
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_with_checkouts_warnings_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => []}, 
+          project => "valid", 
+          has_checkouts => true, 
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_abort_test(Config) ->
+    P = #{command => #{provider => rebar3_hex_publish, args => []}, 
+          project => "valid", 
+          mocks => [publish_abort]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_in_umbrella_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--app", "foo"]}, 
+          project => "umbrella",
+          app => "foo",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_in_umbrella_when_app_does_not_exist(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--app", "eh"]}, 
+          project => "umbrella", 
+          app => "umbrella",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    Exp = {error,{rebar3_hex_publish,{app_not_found,"eh"}}},
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
+
+publish_package_test(Config) ->
+    P = #{command => #{provider => rebar3_hex_publish, args => ["package"]}, project => "valid", mocks => [publish]},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_docs_test(Config) ->
+    P = #{command => #{provider => rebar3_hex_publish, args => ["docs"]}, project => "valid", mocks => [publish]},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_package_in_umbrella_with_app_opt_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["package", "--app", "foo"]}, 
+          project => "umbrella",
+          app => "foo",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_docs_in_umbrella_with_app_opt_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["docs", "--app", "foo"]}, 
+          project => "umbrella", 
+          app => "foo",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_package_in_umbrella_without_app_opt_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["package"]}, 
+          project => "umbrella",
+          app => "umbrella",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    Exp = {error, {rebar3_hex_publish, {publish_package, app_switch_required}}},
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
+
+publish_package_in_umbrella_when_does_not_exist_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["package", "--app", "eh"]}, 
+          project => "umbrella",
+          app => "umbrella",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    Exp = {error,{rebar3_hex_publish,{app_not_found,"eh"}}},
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
+
+publish_docs_in_umbrella_when_does_not_exist_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["docs", "--app", "eh"]}, 
+          project => "umbrella", 
+          app => "umbrella",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    Exp = {error,{rebar3_hex_publish,{app_not_found,"eh"}}},
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
+
+publish_docs_in_umbrella_without_app_opt_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["docs"]}, 
+          project => "umbrella", 
+          app => "umbrella",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    Exp = {error, {rebar3_hex_publish, {publish_docs, app_switch_required}}},
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
 
 publish_multi_errors_test(Config) -> 
-    P = #{app => "multi_errors", mocks => [publish]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, [], RepoConfig, State),
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => []}, 
+          project => "multi_errors",
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
     Exp = {error, {rebar3_hex_publish,
                          {validation_errors,
                           [{invalid_semver,
                             {<<"multi_errors">>,"0.1b-prod"}}]}}},
-    ?assertError(Exp, rebar3_hex_publish:do(PubState)).
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
 
 
 %% TODO: This test currently is merely to see if we can handle the --replace switch
@@ -501,216 +509,296 @@ publish_multi_errors_test(Config) ->
 %% a package add function on hex_api_model which takes a package name, published at timestamp, etc.
 %% so we can test the sad paths (i.e., you can not replace a package after N seconds)
 publish_replace_test(Config) ->
-    P = #{app => "valid", mocks => [publish]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, ["--replace"], RepoConfig, State),
-    {ok, _} = rebar_prv_edoc:do(PubState),
-
-    ?assertMatch({ok, PubState}, rebar3_hex_publish:do(PubState)).
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--replace"]}, 
+          project => "valid", 
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
 
 publish_revert_test(Config) ->
-    P = #{app => "valid", mocks => [publish_revert], version => "1.0.0"},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, ["--revert", "1.0.0"], RepoConfig, State),
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--revert", "1.0.0"]}, 
+          project => "valid", 
+          mocks => [publish], 
+          version => "1.0.0"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
 
-    ?assertMatch({ok, PubState}, rebar3_hex_publish:do(PubState)).
+publish_revert_in_umbrella_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--revert", "1.0.0", "--app", "foo"]}, 
+          project => "umbrella", 
+          app => "foo",
+          mocks => [publish], 
+          version => "1.0.0"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
 
-% TODO: We need to test publishing when a repo is only in rebar.config
-% which is valid and works. Setting up the state is not clear though.
-% -- Bryan
+publish_revert_in_umbrella_without_app_arg_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--revert", "1.0.0"]}, 
+          project => "umbrella", 
+          app => "umbrella",
+          mocks => [publish], 
+          version => "1.0.0"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    Exp = {error,{rebar3_hex_publish,{revert, app_switch_required}}},
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
+
+publish_revert_in_umbrella_app_not_found_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--revert", "1.0.0", "--app", "baz"]},
+          project => "umbrella", 
+          app => "umbrella",
+          mocks => [publish], 
+          version => "1.0.0"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    Exp = {error,{rebar3_hex_publish,{app_not_found,"baz"}}},
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
+
+publish_revert_package_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["package", "--revert", "1.0.0"]},
+          project => "valid", 
+          mocks => [publish], 
+          version => "1.0.0"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
+publish_revert_invalid_version_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["--revert", "1.0"]}, 
+          project => "valid", 
+          mocks => [publish], 
+          version => "1.0.0"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    Exp = {error, {rebar3_hex_publish, {invalid_semver_arg,<<"1.0">>}}},
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
+
+publish_revert_docs_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["docs", "--revert", "1.0.0"]},
+          project => "valid", 
+          mocks => [publish], 
+          version => "1.0.0"
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
+
 publish_org_test(Config) ->
-    P = #{app => "valid",
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["-r", "hexpm:valid"]},
+          project => "valid",
           mocks => [publish],
           repo_config => #{repo => <<"hexpm:valid">>,
                            name => <<"hexpm:valid">>
                           }
          },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, ["-r", "hexpm:valid"], RepoConfig, State),
-    {ok, _} = rebar_prv_edoc:do(PubState),
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
 
-    ?assertMatch({ok, PubState}, rebar3_hex_publish:do(PubState)).
+publish_org_non_hexpm_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["-r", "other"]},
+          project => "valid",
+          mocks => [publish],
+          repo_config => #{repo => <<"other">>,
+                           name => <<"other">>
+                          }
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
 
 publish_org_error_test(Config) ->
-    P = #{app => "valid", mocks => [publish], repo_config => #{repo => <<"hexpm:foo">>, name => <<"hexpm:foo">>}},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, ["-r", "hexpm:bar"], RepoConfig, State),
-
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["-r", "hexpm:bar"]}, 
+          project => "valid", 
+          mocks => [publish], 
+          repo_config => #{repo => <<"hexpm:foo">>, name => <<"hexpm:foo">>}
+         },
+    #{rebar_state := State} = setup_state(P, Config),
     ExpError = {error,{rebar3_hex_publish,{not_valid_repo,"hexpm:bar"}}},
-    ?assertError(ExpError, rebar3_hex_publish:do(PubState)).
+    ?assertError(ExpError, rebar3_hex_publish:do(State)).
 
 publish_org_requires_repo_arg_test(Config) ->
-    P = #{app => "valid", mocks => [publish], repo_config => #{repo => <<"hexpm:valid">>, name => <<"hexpm:valid">>}},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, [], RepoConfig, State),
-    ?assertError({error,{rebar3_hex_publish,{required,repo}}}, rebar3_hex_publish:do(PubState)).
+    P = #{command => #{provider => rebar3_hex_publish, args => []},
+          project => "valid", 
+          mocks => [publish], 
+          repo_config => #{repo => <<"hexpm:valid">>, name => <<"hexpm:valid">>}
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertError({error,{rebar3_hex_publish,{required,repo}}}, rebar3_hex_publish:do(State)).
 
 publish_error_test(Config) ->
-    P = #{app => "valid", mocks => [publish], repo_config => #{write_key => undefined}},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, [], RepoConfig, State),
-
-    ?assertError({error,{rebar3_hex_publish,no_write_key}}, rebar3_hex_publish:do(PubState)).
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => []}, 
+          project => "valid", 
+          mocks => [publish], 
+          repo_config => #{write_key => undefined}
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertError({error,{rebar3_hex_publish,no_write_key}}, rebar3_hex_publish:do(State)).
 
 publish_unauthorized_test(Config) ->
     WriteKey = rebar3_hex_user:encrypt_write_key(<<"mr_pockets">>, <<"special_shoes">>, <<"unauthorized">>),
-    P = #{app => "valid",
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["-r", "hexpm:valid"]},
+          project => "valid",
           mocks => [publish],
           repo_config => #{write_key => WriteKey, repo => <<"hexpm:valid">>, name => <<"hexpm:valid">>}
          },
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, ["-r", "hexpm:valid"], RepoConfig, State),
+    #{rebar_state := State} = setup_state(P, Config),
     Exp = {error,
            {rebar3_hex_publish,
             {publish,
              {error,
               #{<<"message">> =>
                 <<"account not authorized for this action">>}}}}},
-    ?assertError(Exp, rebar3_hex_publish:do(PubState)).
+    ?assertError(Exp, rebar3_hex_publish:do(State)).
 
-publish_without_docs_test(Config) ->
-    P = #{app => "valid", mocks => [publish]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, ["package"], RepoConfig, State),
-    ?assertMatch({ok, PubState}, rebar3_hex_publish:do(PubState)).
-
-publish_only_docs_test(Config) ->
-    P = #{app => "valid", mocks => [publish]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}], 
-    {ok, PubState} = test_utils:mock_command(rebar3_hex_publish, ["docs"], RepoConfig, State), 
-    {ok, NewState} = rebar_prv_edoc:do(PubState),
-    ?assertMatch({ok, PubState}, rebar3_hex_publish:do(NewState)).
+publish_docs_dry_run_test(Config) ->
+    P = #{
+          command => #{provider => rebar3_hex_publish, args => ["docs", "--dry-run"]}, 
+          project => "valid", 
+          mocks => [publish]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_publish:do(State)).
 
 retire_test(Config) ->
-    P = #{app => "valid", mocks => [retire]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, RetState} = test_utils:mock_command(rebar3_hex_retire, [], RepoConfig, State),
-    ?assertError({error,{rebar3_hex_retire,{required,pkg}}}, rebar3_hex_retire:do(RetState)),
-    {ok, RetState1} = test_utils:mock_command(rebar3_hex_retire, ["pkg_name"], RepoConfig, State),
-    ?assertError({error,{rebar3_hex_retire,{required,vsn}}}, rebar3_hex_retire:do(RetState1)),
-    {ok, RetState2} = test_utils:mock_command(rebar3_hex_retire, ["pkg_name", "1.1.1"], RepoConfig, State),
-    ?assertError({error,{rebar3_hex_retire,{required,reason}}}, rebar3_hex_retire:do(RetState2)),
-    {ok, RetState3} = test_utils:mock_command(rebar3_hex_retire, ["pkg_name", "1.1.1", "reason"], RepoConfig, State),
-    ?assertError({error,{rebar3_hex_retire,{required,message}}}, rebar3_hex_retire:do(RetState3)),
-    {ok, RetState4} = test_utils:mock_command(rebar3_hex_retire, ["pkg_name", "1.1.1", "reason", "msg"], RepoConfig, State),
-    ?assertMatch({ok, _Retstate4}, rebar3_hex_retire:do(RetState4)).
+    Command1 = #{provider => rebar3_hex_retire, args => []},
+    P1 = #{command => Command1, project => "valid", mocks => [retire]},
+    #{rebar_state := State1} = setup_state(P1, Config),
+    ?assertError({error,{rebar3_hex_retire,{required,pkg}}}, rebar3_hex_retire:do(State1)),
+
+    Command2 = Command1#{args => ["pkg_name"]},
+    P2 = #{command => Command2, project => "valid", mocks => [retire]},
+    #{rebar_state := State2} = setup_state(P2, Config),
+    ?assertError({error,{rebar3_hex_retire,{required,vsn}}}, rebar3_hex_retire:do(State2)),
+
+    Command3 = Command1#{args => ["pkg_name", "1.1.1"]},
+    P3 = #{command => Command3, project => "valid", mocks => [retire]},
+    #{rebar_state := State3} = setup_state(P3, Config),
+    ?assertError({error,{rebar3_hex_retire,{required,reason}}}, rebar3_hex_retire:do(State3)),
+
+    Command4 = Command1#{args => ["pkg_name", "1.1.1", "reason"]},
+    P4 = #{command => Command4, project => "valid", mocks => [retire]},
+    #{rebar_state := State4} = setup_state(P4, Config),
+    ?assertError({error,{rebar3_hex_retire,{required,message}}}, rebar3_hex_retire:do(State4)),
+
+    Command5 = Command1#{args => ["pkg_name", "1.1.1", "reason", "msg"]},
+    P5 = #{command => Command5, project => "valid", mocks => [retire]},
+    #{rebar_state := State5} = setup_state(P5, Config),
+    ?assertMatch({ok, State5}, rebar3_hex_retire:do(State5)).
 
 key_list_test(Config) ->
-    P = #{app => "valid", mocks => []},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, ListState} = test_utils:mock_command(rebar3_hex_key, ["list"], RepoConfig, State),
-
-    ?assertMatch({ok, ListState}, rebar3_hex_key:do(ListState)).
+    P = #{command => #{provider => rebar3_hex_key, args => ["list"]}, project => "valid", mocks => []},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_key:do(State)).
 
 key_get_test(Config) ->
-    P = #{app => "valid", mocks => []},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, GetState} = test_utils:mock_command(rebar3_hex_key, ["fetch", "-k", "key"], RepoConfig, State),
-
-    ?assertMatch({ok, GetState}, rebar3_hex_key:do(GetState)).
+    P = #{command => #{provider => rebar3_hex_key, args => ["fetch", "-k", "key"]}, project => "valid", mocks => []},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_key:do(State)).
 
 key_add_test(Config) ->
-    P = #{app => "valid", mocks => [key_mutation]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AddState} = test_utils:mock_command(rebar3_hex_key, ["generate", "-k", "foo"], RepoConfig, State),
-
-    ?assertMatch({ok, AddState}, rebar3_hex_key:do(AddState)).
+    P = #{command => #{provider => rebar3_hex_key, args => ["generate", "-k", "foo"]}, project => "valid", mocks => [key_mutation]},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_key:do(State)).
 
 key_delete_test(Config) ->
-    P = #{app => "valid", mocks => [key_mutation]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AddState} = test_utils:mock_command(rebar3_hex_key, ["revoke", "-k", "key"], RepoConfig, State),
-
-    ?assertMatch({ok, AddState}, rebar3_hex_key:do(AddState)).
+    P = #{
+          command => #{provider => rebar3_hex_key, args => ["revoke", "-k", "key"]}, 
+          project => "valid", 
+          mocks => [key_mutation]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_key:do(State)).
 
 key_delete_all_test(Config) ->
-    P = #{app => "valid", mocks => [key_mutation]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AddState} = test_utils:mock_command(rebar3_hex_key, ["revoke", "--all"], RepoConfig, State),
-
-    ?assertMatch({ok, AddState}, rebar3_hex_key:do(AddState)).
+    P = #{
+          command => #{provider => rebar3_hex_key, args => ["revoke", "--all"]}, 
+          project => "valid", 
+          mocks => [key_mutation]
+         },
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertMatch({ok, State}, rebar3_hex_key:do(State)).
 
 owner_add_test(Config) ->
-    P = #{app => "valid", mocks => [owner]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{
+          command => #{provider => rebar3_hex_owner, args =>  ["add", "truecoat", "wade@foo.bar"]}, 
+          project => "valid", 
+          mocks => [owner]
+         },
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    Command = ["add", "truecoat", "wade@foo.bar"],
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AddState} = test_utils:mock_command(rebar3_hex_owner, Command, RepoConfig, State),
-
-    ?assertMatch({ok, AddState}, rebar3_hex_owner:do(AddState)).
+    ?assertMatch({ok, State}, rebar3_hex_owner:do(State)).
 
 owner_transfer_test(Config) ->
-    P = #{app => "valid", mocks => [owner]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{
+          command => #{
+                       provider => rebar3_hex_owner, 
+                       args => ["transfer", "truecoat", "gustafson_motors", "-r", "hexpm"]
+                      }, 
+          project => "valid", 
+          mocks => [owner]
+         },
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    Command = ["transfer", "truecoat", "gustafson_motors", "-r", "hexpm"],
-    RepoConfig = [{repos,[Repo]}],
-    {ok, AddState} = test_utils:mock_command(rebar3_hex_owner, Command, RepoConfig, State),
-
-    ?assertMatch({ok, AddState}, rebar3_hex_owner:do(AddState)).
+    ?assertMatch({ok, State}, rebar3_hex_owner:do(State)).
 
 owner_remove_test(Config) ->
-    P = #{app => "valid", mocks => [owner]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{
+          command => #{provider => rebar3_hex_owner, args => ["remove", "truecoat", "wade@foo.bar"]}, 
+          project => "valid", 
+          mocks => [owner]
+         },
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    Command = ["remove", "truecoat", "wade@foo.bar"],
-    RepoConfig = [{repos,[Repo]}],
-    {ok, RemoveState} = test_utils:mock_command(rebar3_hex_owner, Command, RepoConfig, State),
-
-    ?assertMatch({ok, RemoveState}, rebar3_hex_owner:do(RemoveState)).
+    ?assertMatch({ok, State}, rebar3_hex_owner:do(State)).
 
 owner_list_test(Config) ->
-    P = #{app => "valid", mocks => [owner]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
+    P = #{
+          command => #{provider => rebar3_hex_owner, args => ["list", "truecoat"]}, 
+          project => "valid", 
+          mocks => [owner]
+         },
+    #{rebar_state := State, repo := Repo} = setup_state(P, Config),
     create_user(?default_username, ?default_password, ?default_email, Repo),
-    Command = ["list", "truecoat"],
-    RepoConfig = [{repos,[Repo]}],
-    {ok, ListState} = test_utils:mock_command(rebar3_hex_owner, Command, RepoConfig, State),
-
-    ?assertMatch({ok, ListState}, rebar3_hex_owner:do(ListState)).
+    ?assertMatch({ok, State}, rebar3_hex_owner:do(State)).
 
 bad_command_test(Config) ->
-    P = #{app => "valid", mocks => [deauth]},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    Command = ["bad_command"],
-    RepoConfig = [{repos,[Repo]}],
-    {ok, BadcommandState} = test_utils:mock_command(rebar3_hex_user, Command, RepoConfig, State),
+    P = #{command => #{provider => rebar3_hex_user, args => ["bad_command"]}, project => "valid", mocks => [deauth]},
+    #{rebar_state := State} = setup_state(P, Config),
+    ?assertThrow({error,{rebar3_hex_user,bad_command}}, rebar3_hex_user:do(State)).
 
-    ?assertThrow({error,{rebar3_hex_user,bad_command}}, rebar3_hex_user:do(BadcommandState)).
+% revert_invalid_ver_test(Config) ->
+%     P = #{
+%           command => #{provider => rebar3_hex_revert, args => ["valid", "eh?"]}, 
+%           project => "valid", 
+%           mocks => [publish_revert], 
+%           version => "eh?"
+%          },
+%     #{rebar_state := State} = setup_state(P, Config),
+%      ?assertThrow(rebar_abort, rebar3_hex_revert:do(State)).
 
-revert_invalid_ver_test(Config) ->
-    P = #{app => "valid", mocks => [publish_revert], version => "eh?"},
-    {ok, #{rebar_state := State, repo := Repo}} = setup_state(P, Config),
-    RepoConfig = [{repos,[Repo]}],
-    {ok, RevState} = test_utils:mock_command(rebar3_hex_revert, ["valid", "eh?"], RepoConfig, State),
-
-     ?assertThrow(rebar_abort, rebar3_hex_revert:do(RevState)).
 %%%%%%%%%%%%%%%%%%
 %%%  Helpers   %%%
 %%%%%%%%%%%%%%%%%%
-
 
 %% setup_state/2 takes a set of parameters and a CT config
 %% The with param is used to setup predefined mock scenarios. May be an empty list if no mocks are required.
 setup_state(P, Config) ->
     Params = maps:merge(?default_params, P),
-    #{app := AppName,
+    #{project := ProjectName,
       mocks := Mocks,
       username := Username,
       password := Password,
@@ -724,19 +812,42 @@ setup_state(P, Config) ->
     RepoConfig = maps:merge(DefRepoConfig#{write_key => WriteKey}, ParamRepoConfig),
     Repo = test_utils:repo_config(RepoConfig),
 
-    {ok, App, State} = test_utils:mock_app(AppName, ?config(data_dir, Config), Repo),
+    {ok, State} = test_utils:stub_project(ProjectName, ?config(data_dir, Config), Repo),
 
-    %% Make sure there is no leftover generated doc directory
+   App = case rebar_state:project_apps(State) of
+        [App1] -> 
+            App1; 
+        [_|_] = Apps ->
+          #{app := ProjAppName} = P,
+          {ok, App1} = rebar3_hex_app:find(Apps, ProjAppName),
+          App1
+    end,
+
+    %% Make sure there is no leftover generated doc or _checkouts directory
+    CheckoutsDir = filename:join(rebar_app_info:dir(App), "_checkouts"),
+    
+    case P of
+        #{has_checkouts := true} -> 
+            file:make_dir(CheckoutsDir);
+        _ ->
+          ok = rebar_file_utils:rm_rf(CheckoutsDir)
+    end,
+
     ok = rebar_file_utils:rm_rf(filename:join(rebar_app_info:dir(App), "doc")),
 
+    AppName = maps:get(app, P, ProjectName),
+
     Setup = Params#{ repo => Repo,
-                     app_state => App,
+                     app_name => AppName,
                      rebar_state => State
                    },
 
     lists:foreach(fun(W) -> setup_mocks_for(W, Setup) end, Mocks),
 
-    {ok, Setup}.
+    #{command := #{provider := Provider, args := Args}} = Setup, 
+    {ok, State1} = test_utils:mock_command(Provider, Args, [{repos, [Repo]}], State),
+
+    Setup#{rebar_state => State1}.
 
 create_user(User, Pass, Email, Repo) ->
     hex_api_user:create(Repo, User, Pass, Email).
@@ -751,7 +862,7 @@ setup_mocks_for(org_auth, #{repo := Repo}) ->
                                                               #{auth_key := <<"key">>} = _ = maps:get(Rname, Cfg),
                                                               ok end);
 
-setup_mocks_for(docs, #{password := Password, password_confirmation := PasswordConfirm, repo := Repo}) ->
+setup_mocks_for(docs, #{password := Password, password_confirmation := PasswordConfirm, repo := Repo} = Setup) ->
     meck:expect(rebar3_hex_config, update_auth_config, fun(Cfg, State) ->
                                                               Rname = maps:get(name, Repo),
                                                               Skey = maps:get(repo_key, Repo),
@@ -761,24 +872,7 @@ setup_mocks_for(docs, #{password := Password, password_confirmation := PasswordC
 
     expect_local_password_prompt(Password, PasswordConfirm),
 	expects_prompts([{any, string, "A", {returns, "A"}}, {"Proceed?", boolean, "Y", {returns, true}}]),
-
-    CocStr = "Before publishing, please read Hex CoC: https://hex.pm/policies/codeofconduct",
-    Expects = [
-               {"Select application(s):",[]},
-               {"------------",[]},
-               {"A) All",[]},
-               {"Publishing ~ts ~ts to ~ts",[<<"valid">>,"0.1.0",<<"hexpm:valid">>]},
-               {"Publishing ~ts ~ts to ~ts",[<<"valid">>,"0.1.0",<<"hexpm">>]},
-               {"  Description: ~ts",["An OTP application"]},
-               {"  Dependencies:~n    ~ts",[[]]},
-               {"  Included files:~n    ~ts", any},
-               {"  Licenses: ~ts",["Apache 2.0"]},
-               {"  Links:~n    ~ts",[[]]},
-               {"  Build tools: ~ts",[["rebar3"]]},
-               {"Be aware, you are publishing to the public Hexpm repository.",[]},
-               {CocStr, []}
-              ],
-    expects_output(Expects);
+    expects_output(default_publish_io(Setup));
 
 setup_mocks_for(first_auth, #{username := Username,
                               email := Email,
@@ -840,7 +934,44 @@ setup_mocks_for(key_mutation, #{password := Password, password_confirmation := P
 setup_mocks_for(publish, #{username := Username,
                            password := Password,
                            password_confirmation := PasswordConfirm,
-                           repo := Repo}) ->
+                           repo := Repo} = Setup) ->
+
+    Fun = fun(Cfg, State) ->
+                  Rname = maps:get(name, Repo),
+                  Skey = maps:get(repo_key, Repo),
+                  [Rname] = maps:keys(Cfg),
+                  #{repo_key := Skey, username := Username} = maps:get(Rname, Cfg),
+                  {ok, State} end,
+    meck:expect(rebar3_hex_config, update_auth_config, Fun),
+
+    expect_local_password_prompt(Password, PasswordConfirm),
+    Proceed = case Setup of 
+                  #{has_checkouts := true} ->
+                      {"Proceed (with warnings)?", boolean, "Y", {returns, true}};
+                 _ -> 
+                      {"Proceed?", boolean, "Y", {returns, true}}
+              end,
+
+    Exps = [
+            {any, string, "A", {return, "A"}},
+            Proceed
+           ],
+
+    Exps1 = case Setup of 
+        #{version := Vsn} -> 
+           VsnExp = {[65,108,115,111,32,100,101,108,101,116,101,32,116,97,103,32,118,Vsn,63],boolean,"N", {returns, false}},
+           [VsnExp | Exps];
+         _ -> 
+           Exps
+        end,
+
+    expects_prompts(Exps1),
+    expects_output(default_publish_io(Setup));
+
+setup_mocks_for(publish_abort, #{username := Username,
+                           password := Password,
+                           password_confirmation := PasswordConfirm,
+                           repo := Repo} = Setup) ->
 
     Fun = fun(Cfg, State) ->
                   Rname = maps:get(name, Repo),
@@ -853,46 +984,10 @@ setup_mocks_for(publish, #{username := Username,
     expect_local_password_prompt(Password, PasswordConfirm),
     Exps = [
             {any, string, "A", {return, "A"}},
-            {"Proceed?", boolean, "Y", {returns, true}}
+            {"Proceed?", boolean, "Y", {returns, false}}
            ],
     expects_prompts(Exps),
-    CocStr = "Before publishing, please read Hex CoC: https://hex.pm/policies/codeofconduct",
-    OneOfs = [{"Select application(s):",[]},
-              {"------------",[]},
-              {"A) All",[]},
-              {"Publishing ~ts ~ts to ~ts",[<<"valid">>,"0.1.0",<<"hexpm:valid">>]},
-              {"Publishing ~ts ~ts to ~ts",[<<"valid">>,"0.1.0",<<"hexpm">>]},
-              {"  Description: ~ts",["An OTP application"]},
-              {"  Dependencies:~n    ~ts",[[]]},
-              {"  Included files:~n    ~ts", any},
-              {"  Licenses: ~ts",["Apache 2.0"]},
-              {"  Links:~n    ~ts",[[]]},
-              {"  Build tools: ~ts",[["rebar3"]]},
-              {"Be aware, you are publishing to the public Hexpm repository.",[]},
-              {CocStr, []}],
-		expects_output(OneOfs);
-
-setup_mocks_for(publish_revert, #{username := Username,
-                           password := Password,
-                           password_confirmation := PasswordConfirm,
-                           version := Vsn,
-                           repo := Repo}) ->
-
-    Fun = fun(Cfg, State) ->
-                  Rname = maps:get(name, Repo),
-                  Skey = maps:get(repo_key, Repo),
-                  [Rname] = maps:keys(Cfg),
-                  #{repo_key := Skey, username := Username} = maps:get(Rname, Cfg),
-                  {ok, State} end,
-    meck:expect(rebar3_hex_config, update_auth_config, Fun),
-
-    expect_local_password_prompt(Password, PasswordConfirm),
-    Exps = [
-            {[65,108,115,111,32,100,101,108,101,116,101,32,116,97,103,32,118,Vsn,
-              63],
-             boolean,"N", {returns, false}}
-           ],
-    expects_prompts(Exps);
+	expects_output(default_publish_io(Setup));
 
 setup_mocks_for(retire, #{username := Username,
                            password := Password,
@@ -928,6 +1023,24 @@ setup_mocks_for(register_existing, #{username := Username,
     expect_local_password_prompt(Password, Password),
     expects_user_registration_prompts(Email, Username).
 
+default_publish_io(#{app_name := AppName, repo := #{name := RepoName}}) ->
+    BinAppName = rebar_utils:to_binary(AppName),
+    CocStr = "Before publishing, please read Hex CoC: https://hex.pm/policies/codeofconduct",
+    [
+     {"Select application(s):",[]},
+     {"------------",[]},
+     {"A) All",[]},
+     {"Publishing ~ts ~ts to ~ts",[BinAppName,"0.1.0",RepoName]},
+     {"  Description: ~ts",["An OTP application"]},
+     {"  Dependencies:~n    ~ts",[[]]},
+     {"  Included files:~n    ~ts", any},
+     {"  Licenses: ~ts",["Apache 2.0"]},
+     {"  Links:~n    ~ts",[[]]},
+     {"  Build tools: ~ts",[["rebar3"]]},
+     {"Be aware, you are publishing to the public Hexpm repository.",[]},
+     {CocStr, []}
+    ].
+	
 expects_registration_output() ->
     ExpectedInfo = "By registering an account on Hex.pm you accept all our"
     ++ " policies and terms of service found at https://hex.pm/policies\n",

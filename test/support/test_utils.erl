@@ -1,6 +1,6 @@
 -module(test_utils).
 
--export([mock_app/2, mock_app/3, mock_command/4, repo_config/0, repo_config/1]).
+-export([stub_project/2, stub_project/3, mock_command/4, repo_config/0, repo_config/1]).
 
 -define(REPO_CONFIG, maps:merge(hex_core:default_config(), #{
                                   name        => <<"hexpm">>,
@@ -18,16 +18,15 @@
                                  }
                                )).
 
-mock_app(AppName, DataDir) ->
-    mock_app(AppName, DataDir, repo_config()).
+stub_project(AppName, DataDir) ->
+    stub_project(AppName, DataDir, repo_config()).
 
-mock_app(AppName, DataDir, Repo) ->
-    Src = filename:join([DataDir, "test_apps/" ++ AppName]),
-    State = rebar_state:new(), 
-    {ok, App} = rebar_app_info:discover(Src, State),
-    State1 = rebar_state:project_apps(rebar_state(Repo), [App]),
-    State2 = rebar_state:current_app(State1, App),
-    {ok, App, State2}.
+stub_project(AppName, DataDir, Repo) ->
+    AppsDir = filename:join([DataDir, "test_apps/" ++ AppName]),
+    State = rebar_state(AppsDir, Repo),
+    LibDirs = rebar_dir:lib_dirs(State),
+    State1 = rebar_app_discover:do(State, LibDirs),
+    {ok, State1}.
 
 mock_command(ProviderName, Command, RepoConfig, State0) ->
     State1 = rebar_state:add_resource(State0, {pkg, rebar_pkg_resource}),
@@ -37,12 +36,21 @@ mock_command(ProviderName, Command, RepoConfig, State0) ->
     {ok, State5} = ProviderName:init(State4),
 
     [Provider] = rebar_state:providers(State5),
-    Opts = providers:opts(Provider) ++ rebar3:global_option_spec_list(),
-    {ok, Args} = getopt:parse(Opts, rebar_state:command_args(State5)),
-    {ok, rebar_state:command_parsed_args(State5, Args)}.
 
-rebar_state(Repo) ->
-    rebar_state:new([{command_parsed_args, []}, {resources, []}, {hex, [{repos, [Repo]}]}]).
+    {ok, State6} = rebar_prv_edoc:init(State5),
+
+    Opts = providers:opts(Provider) ++ rebar3:global_option_spec_list(),
+    {ok, Args} = getopt:parse(Opts, rebar_state:command_args(State6)),
+    {ok, rebar_state:command_parsed_args(State6, Args)}.
+
+rebar_state(AppsDir, Repo) -> 
+    State = rebar_state:new([{root_dir, AppsDir}, 
+                             {base_dir, filename:join([AppsDir, "_build"])}, 
+                             {command_parsed_args, []}, 
+                             {resources, []},
+                             {hex, [{repos, [Repo]}]}
+                            ]),
+    rebar_state:dir(State, AppsDir).
 
 repo_config() ->
     ?REPO_CONFIG.

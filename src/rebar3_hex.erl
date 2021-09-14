@@ -25,9 +25,7 @@ init(State) ->
                                                    rebar3_hex_key,
                                                    rebar3_hex_owner,
                                                    rebar3_hex_repo,
-                                                   rebar3_hex_docs,
                                                    rebar3_hex_search,
-                                                   rebar3_hex_revert,
                                                    rebar3_hex_retire,
                                                    rebar3_hex_publish]).
 
