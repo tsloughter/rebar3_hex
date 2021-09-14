@@ -247,7 +247,7 @@ publish(State, Repo, App, Args) ->
 -dialyzer({nowarn_function, publish_package/4}).
 publish_package(State, Repo, App, Args) ->
     assert_valid_app(State, App),
-    Package = rebar3_hex_build:create_package(State, Repo, App),
+    Package = create_package(State, Repo, App),
     maybe_print_checkouts_warnings(App, Package),
     print_package_info(Package),
     maybe_say_coc(Repo),
@@ -268,6 +268,14 @@ publish_package(State, Repo, App, Args) ->
         abort ->
             rebar3_hex_io:say("Goodbye..."),
             abort
+    end.
+
+create_package(State, Repo, App) -> 
+    case rebar3_hex_build:create_package(State, Repo, App) of
+        {ok, Package} -> 
+            Package;
+        Err -> 
+            ?RAISE({create_package, Err})
     end.
 
 print_package_info(Package) ->
@@ -335,19 +343,27 @@ hex_opts(Opts) ->
 %%% ===================================================================
 
 publish_docs(State, Repo, App, Args) ->
-    #{tarball := Tar, name := Name, vsn := Vsn} = rebar3_hex_build:create_docs(State, Repo, App),
+    #{tarball := Tar, name := Name, vsn := Vsn} = create_docs(State, Repo, App),
     case Args of
         #{dry_run := true} ->
             rebar_api:info("--dry-run enabled : will not publish docs.", []),
             {ok, State};
-        _ ->
+         _ ->
             case rebar3_hex_client:publish_docs(Repo, Name, Vsn, Tar) of
                 {ok, _} ->
                     rebar_api:info("Published docs for ~ts ~ts", [Name, Vsn]),
                     {ok, State};
                 Reason ->
-                    ?RAISE({publish, Reason})
+                    ?RAISE({publish_docs, Reason})
             end
+    end.
+
+create_docs(State, Repo, App) -> 
+    case rebar3_hex_build:create_docs(State, Repo, App) of 
+        {ok, Docs} ->
+            Docs;
+        Err -> 
+            ?RAISE({create_docs, Err})
     end.
 
 %%% ===================================================================

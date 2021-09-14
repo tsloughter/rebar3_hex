@@ -51,21 +51,22 @@ create_package(State, #{name := RepoName} = _Repo, App) ->
     
     Tarball = create_package_tarball(Metadata, PackageFiles),
 
-    #{name => PkgName,
+    Package = #{name => PkgName,
       repo_name => RepoName,
       deps => Deps1,
       version => Version,
       metadata => Metadata,
       files => PackageFiles,
       tarball => Tarball,
-      has_checkouts => has_checkouts_for(AppDir)}.
+      has_checkouts => has_checkouts_for(AppDir)},
+    {ok, Package}.
 
 gather_deps(Deps) ->
     case rebar3_hex_app:get_deps(Deps) of
         {ok, Top} ->
             Top;
-        {error, Reason} ->
-             ?RAISE(Reason)
+        {error, _Reason} = Err ->
+            Err 
     end.
 
 update_versions(ConfigDeps, Deps) ->
@@ -128,45 +129,59 @@ has_checkouts_for(AppDir) ->
     Checkouts = filename:join(AppDir, "_checkouts"),
     filelib:is_dir(Checkouts).
 
+%%-spec create_docs(rebar_state:t(), map(), rebar_app:t()) -> {ok, term()} | {error, term()}.
 create_docs(State, Repo, App) -> 
-    maybe_gen_docs(State, Repo),
-    AppDir = rebar_app_info:dir(App),
-    AppOpts = rebar_app_info:opts(App),
-    EdocOpts = rebar_opts:get(AppOpts, edoc_opts, []),
-    AppDetails = rebar_app_info:app_details(App),
-    Dir = proplists:get_value(dir, EdocOpts, ?DEFAULT_DOC_DIR),
-    DocDir = proplists:get_value(doc, AppDetails, Dir),
-    IndexFile = filename:join(AppDir, DocDir) ++ "/index.html",
-
-    filelib:is_file(IndexFile) orelse ?RAISE({publish, {missing_doc_dir, DocDir}}),
-
-    Files = rebar3_hex_file:expand_paths([DocDir], AppDir),
-    Name = rebar_utils:to_list(rebar_app_info:name(App)),
-    PkgName = rebar_utils:to_list(proplists:get_value(pkg_name, AppDetails, Name)),
-    OriginalVsn = rebar_app_info:original_vsn(App),
-    Vsn = rebar_utils:vcs_vsn(App, OriginalVsn, State),
-
-    FileList = [{filename:join(filename:split(ShortName) -- [DocDir]), FullName} || {ShortName, FullName} <- Files],
-    {ok, Tarball} = create_docs_tarball(FileList),   
-    #{tarball => Tarball, name => binarify(PkgName), vsn => binarify(Vsn)}.
+    case maybe_gen_docs(State, Repo) of 
+        {ok, _State1} ->
+            AppDir = rebar_app_info:dir(App),
+            AppOpts = rebar_app_info:opts(App),
+            EdocOpts = rebar_opts:get(AppOpts, edoc_opts, []),
+            AppDetails = rebar_app_info:app_details(App),
+            Dir = proplists:get_value(dir, EdocOpts, ?DEFAULT_DOC_DIR),
+            DocDir = proplists:get_value(doc, AppDetails, Dir),
+            IndexFile = filename:join(AppDir, DocDir) ++ "/index.html",
+            case filelib:is_file(IndexFile) of 
+                true -> 
+                    Files = rebar3_hex_file:expand_paths([DocDir], AppDir),
+                    Name = rebar_utils:to_list(rebar_app_info:name(App)),
+                    PkgName = rebar_utils:to_list(proplists:get_value(pkg_name, AppDetails, Name)),
+                    OriginalVsn = rebar_app_info:original_vsn(App),
+                    Vsn = rebar_utils:vcs_vsn(App, OriginalVsn, State),
+                    FileList = [{filename:join(filename:split(ShortName) -- [DocDir]), FullName} || {ShortName, FullName} <- Files],
+                    case create_docs_tarball(FileList) of 
+                        {ok, Tarball} -> 
+                            {ok, #{tarball => Tarball, name => binarify(PkgName), vsn => binarify(Vsn)}};
+                        {error, _} = Err -> 
+                            Err;
+                        Err -> 
+                            Err
+                    end;
+                false -> 
+                    {error, missing_doc_index}
+            end
+    end.
  
 maybe_gen_docs(State, Repo) ->
     case doc_opts(State, Repo) of
         {ok, #{provider := PrvName}} ->
             case providers:get_provider(PrvName, rebar_state:providers(State)) of
                 not_found ->
-                    rebar_api:error("No provider found for ~ts", [PrvName]);
+                    %% Return error 
+                    {error, doc_provider_not_found};
+                    %% rebar_api:error("No provider found for ~ts", [PrvName]);
                 Prv ->
                     case providers:do(Prv, State) of
                         {ok, State1} ->
                             {ok, State1};
-                        Err ->
-                            ?RAISE({publish, Err})
+                        _ ->
+                            {error, doc_provider_failed}
                     end
             end;
         _ ->
-            Msg = "No valid hex docs configuration found. Docs will will not be generated",
-            rebar_api:error(Msg, [])
+            %% Return error 
+            %%Msg = "No valid hex docs configuration found. Docs will will not be generated",
+            %%rebar_api:error(Msg, [])
+            {error, no_doc_config}
     end.
 
 doc_opts(State, Repo) ->
@@ -180,6 +195,7 @@ doc_opts(State, Repo) ->
             _ -> undefined
         end
     end.
+
 binarify(Term) when is_boolean(Term) ->
     Term;
 binarify(Term) when is_atom(Term) ->
@@ -204,6 +220,8 @@ create_package_tarball(Metadata, Files) ->
      case hex_tarball:create(Metadata, Files) of
          {ok, #{tarball := Tarball, inner_checksum := _Checksum}} ->
              Tarball;
+         {error, _} = Err -> 
+             Err;
          Error ->
              Error
      end.

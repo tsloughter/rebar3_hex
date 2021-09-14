@@ -71,8 +71,7 @@ all() ->
     , owner_add_test
     , owner_transfer_test
     , owner_list_test
-    , owner_remove_test
-    , revert_invalid_ver_test].
+    , owner_remove_test].
 
 init_per_suite(Config) ->
     meck:new([hex_api_user, rebar3_hex_config, rebar3_hex_io], [passthrough, no_link, unstick]),
@@ -781,15 +780,15 @@ bad_command_test(Config) ->
     #{rebar_state := State} = setup_state(P, Config),
     ?assertThrow({error,{rebar3_hex_user,bad_command}}, rebar3_hex_user:do(State)).
 
-revert_invalid_ver_test(Config) ->
-    P = #{
-          command => #{provider => rebar3_hex_revert, args => ["valid", "eh?"]}, 
-          project => "valid", 
-          mocks => [publish_revert], 
-          version => "eh?"
-         },
-    #{rebar_state := State} = setup_state(P, Config),
-     ?assertThrow(rebar_abort, rebar3_hex_revert:do(State)).
+% revert_invalid_ver_test(Config) ->
+%     P = #{
+%           command => #{provider => rebar3_hex_revert, args => ["valid", "eh?"]}, 
+%           project => "valid", 
+%           mocks => [publish_revert], 
+%           version => "eh?"
+%          },
+%     #{rebar_state := State} = setup_state(P, Config),
+%      ?assertThrow(rebar_abort, rebar3_hex_revert:do(State)).
 
 %%%%%%%%%%%%%%%%%%
 %%%  Helpers   %%%
